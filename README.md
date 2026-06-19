@@ -28,3 +28,10 @@ from tikufim_utils import get_daily_counts
 Notes:
 - Install once per venv (editable install links to source folder).
 - Keep data files (e.g., station lists) alongside the package or provide paths in your code.
+
+Testing:
+
+```powershell
+pip install -e .[dev]
+pytest
+```

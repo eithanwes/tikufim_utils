@@ -9,5 +9,8 @@ setup(
     install_requires=[
         # keep minimal; see requirements.txt for pinned versions
     ],
+    extras_require={
+        "dev": ["pytest>=8.0"],
+    },
     zip_safe=False,
 )
