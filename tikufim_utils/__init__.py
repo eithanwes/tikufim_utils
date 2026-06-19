@@ -1,8 +1,33 @@
 import datetime
+import warnings
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.express as px
+
+OBJECT_ID_DICT = {"by_line": "OfficeLineId", "by_station": "StationId"}
+
+COLUMNS_DICT = {
+    "by_line": [
+        "OperatorId",
+        "operator_nm",
+        "ClusterId",
+        "cluster_nm",
+        "OperatorLineId",
+        "OfficeLineId",
+        "Direction",
+        "hour_a",
+        "year_key",
+        "month_key",
+    ],
+    "by_station": [
+        "StationId",
+        "StationName",
+        "LowOrPeakDescFull",
+        "year_key",
+        "month_key",
+    ],
+}
 
 
 def get_day_col_prefix(df):
@@ -67,9 +92,61 @@ def get_hourly_counts(df, object_id, start_date, end_date, year, direction=None)
     return counts, datetimes
 
 
+def get_daily_counts_df(
+    df, start_date, end_date, object_id_lst=None, day_of_week_exclude=None
+):
+    day_col = "day"
+
+    df = df.copy()
+
+    group_category_type = "by_line" if "OfficeLineId" in df.columns else "by_station"
+
+    id_col = OBJECT_ID_DICT[group_category_type]
+
+    if object_id_lst is not None:
+        if isinstance(object_id_lst, (int)):
+            object_id_lst = [object_id_lst]
+        if isinstance(object_id_lst, str):
+            object_id_lst = [int(object_id_lst)]
+        df = df[df[id_col].isin(object_id_lst)]
+
+    # 1. Define the columns that should remain as they are
+    id_vars = COLUMNS_DICT[group_category_type]
+
+    # 2. Use melt to turn day_1, day_2, etc. into rows
+    df_long = df.melt(id_vars=id_vars, var_name=day_col, value_name="pax_count")
+
+    # 3. Clean the 'Day' column: change "day_1" to 1 (integer)
+    df_long[day_col] = (
+        df_long[day_col].str.replace(get_day_col_prefix(df), "").astype(int)
+    )
+
+    # Create a proper date column
+    df_long["date"] = pd.to_datetime(
+        df_long[["year_key", "month_key", day_col]].rename(
+            columns={"year_key": "year", "month_key": "month", day_col: "day"}
+        ),
+        errors="coerce",
+    )
+
+    df_long["week_number"] = df_long["date"].dt.isocalendar().week
+
+    # Filter by date range
+    df_long = df_long[
+        (df_long["date"] >= pd.to_datetime(start_date))
+        & (df_long["date"] <= pd.to_datetime(end_date))
+    ]
+
+    return df_long
+
+
 def get_daily_counts(
     df, object_id, start_date, end_date, direction=None, day_of_week_exclude=None
 ):
+    warnings.warn(
+        "get_daily_counts is deprecated. Use get_daily_counts_df instead.",
+        DeprecationWarning,
+    )
     start_month = datetime.datetime.strptime(start_date, "%Y-%m-%d").month
     end_month = datetime.datetime.strptime(end_date, "%Y-%m-%d").month
 
@@ -116,7 +193,9 @@ def get_weekly_counts(df, object_id, start_date, end_date, year, direction=None)
     week_df["week"] = week_df["date"].apply(lambda d: d.isocalendar()[1])
     week_df["year"] = week_df["date"].apply(lambda d: d.isocalendar()[0])
     grouped = (
-        week_df.groupby(["year", "week"]) .agg({"count": "sum", "date": "min"}) .reset_index()
+        week_df.groupby(["year", "week"])
+        .agg({"count": "sum", "date": "min"})
+        .reset_index()
     )
     weekly_counts = grouped["count"].tolist()
     week_dates = grouped["date"].tolist()
@@ -167,7 +246,15 @@ def plot_counts(dates, counts, title="Passenger Counts", xlabel="Date", ylabel="
     plt.show()
 
 
-def plot_counts_plotly(dates, counts, title="Passenger Counts", xlabel="Date", ylabel="Count", html_file=None, show=True):
+def plot_counts_plotly(
+    dates,
+    counts,
+    title="Passenger Counts",
+    xlabel="Date",
+    ylabel="Count",
+    html_file=None,
+    show=True,
+):
     """Interactive Plotly line plot for counts over time.
 
     Parameters:
@@ -183,13 +270,18 @@ def plot_counts_plotly(dates, counts, title="Passenger Counts", xlabel="Date", y
         plotly.graph_objects.Figure
     """
 
-
     df = pd.DataFrame({"date": dates, "count": counts})
-    fig = px.line(df, x="date", y="count", markers=True, title=title, labels={"date": xlabel, "count": ylabel})
+    fig = px.line(
+        df,
+        x="date",
+        y="count",
+        markers=True,
+        title=title,
+        labels={"date": xlabel, "count": ylabel},
+    )
     fig.update_layout(hovermode="x unified")
     if html_file:
-        fig.write_html(html_file, include_plotlyjs='cdn')
+        fig.write_html(html_file, include_plotlyjs="cdn")
     if show:
         fig.show()
     return fig
-
